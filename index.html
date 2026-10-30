@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0f6b6b"><link rel="icon" href="icon-192.png"><title>Meine Magic-Sammlung</title>
+<style>
+:root{--bg:#eef1f4;--card:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d3dae1;--acc:#0f6b6b;--up:#1b7f4b;--down:#b3362e}
+@media (prefers-color-scheme:dark){:root{--bg:#10171e;--card:#18222c;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--acc:#4fc0bd;--up:#5bd08e;--down:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif;padding:16px;max-width:900px;margin-inline:auto}
+h1{font:600 28px/1.1 Georgia,serif;margin:8px 0 14px}
+h2{font:600 19px Georgia,serif;margin:22px 0 8px}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sum div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px}
+.sum b{display:block;font:600 22px Georgia,serif}
+.sum span{color:var(--mute);font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input,select,button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+input[type=search]{flex:1;min-width:150px}
+button{cursor:pointer}
+button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.it{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center}
+.it img{width:44px;border-radius:3px;display:block}
+.it .n{font-weight:600}
+.it .m{color:var(--mute);font-size:13px}
+.it .r{text-align:right;font-size:14px}
+.it .ctl{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.it .ctl input{width:84px;padding:5px 7px}
+.it .ctl button{padding:3px 10px}
+.up{color:var(--up)}.down{color:var(--down)}
+.msg{color:var(--mute);padding:10px 0}
+a{color:var(--acc)}
+.sw{position:relative;flex:1;min-width:150px;display:flex}.sw input{flex:1}
+.sg{position:absolute;left:0;right:0;top:100%;z-index:5;background:var(--card);border:1px solid var(--line);border-radius:8px;margin-top:2px;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+.sg button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0}
+.sg button:last-child{border-bottom:0}
+.pt{background:var(--card);border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:8px}.pt label{display:block;margin:6px 0 2px;color:var(--mute);font-size:13px}.ctl label{font-size:13px;display:flex;gap:4px;align-items:center}
+.foot{margin:24px 0;color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<h1>Meine Magic-Sammlung</h1>
+<div class="sum">
+  <div><b id="s-val">–</b><span>Marktwert (Cardmarket)</span></div>
+  <div><b id="s-buy">–</b><span>Einkaufswert</span></div>
+  <div><b id="s-diff">–</b><span>Differenz</span></div>
+</div>
+
+<h2>Karte hinzufügen</h2>
+<div class="row">
+  <div class="sw"><input type="search" id="q" placeholder="Kartenname, z. B. Recurring Nightmare" aria-label="Kartenname" autocomplete="off"><div id="sg" class="sg" hidden></div></div>
+  <button class="p" id="go">Suchen</button>
+</div>
+<div id="res" class="list"></div>
+
+<h2>Liste importieren</h2>
+<div class="pt">
+  <label for="lst">Eine Karte pro Zeile, z. B. <i>2 Lightning Bolt (2XM) 117</i> oder <i>1 Recurring Nightmare (ARN) 98 *F*</i></label>
+  <textarea id="lst" style="width:100%;min-height:110px;font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px" placeholder="1 Dream Halls (ICE) 59"></textarea>
+  <button class="p" id="lgo" style="margin-top:6px">Importieren</button>
+  <div id="lst-st" class="msg"></div>
+</div>
+
+<div id="rev" hidden><h2>Zu prüfen</h2>
+<div class="pt"><div class="msg">Vergleiche das Bild mit deiner Karte, wähle die richtige Edition und bestätige jede Karte einzeln.</div>
+<div id="pend" class="list"></div>
+<button class="p" id="take" style="margin-top:8px">Alle übernehmen</button></div></div>
+
+<h2>Foto-Import</h2>
+<div class="pt">
+  <div class="row">
+    <select id="grid" aria-label="Raster"><option value="3x3">3×3 (Ordnerseite)</option><option value="2x2">2×2</option><option value="4x3">4×3 (4 Spalten, 3 Reihen)</option><option value="1x1">1×1 (einzelne Karte)</option></select>
+    <button id="key">API-Key</button>
+  </div>
+  <label for="photos">Fotos aus Galerie wählen oder neu aufnehmen</label>
+  <input type="file" id="photos" accept="image/*" multiple>
+  <div id="pst" class="msg"></div>
+</div>
+
+<h2>Sammlung <span id="cnt" class="m"></span></h2>
+<div class="row">
+  <input type="search" id="f" placeholder="Sammlung filtern" aria-label="Sammlung filtern">
+  <select id="sort" aria-label="Sortierung">
+    <option value="val">Wert absteigend</option>
+    <option value="name">Name</option>
+    <option value="diff">Gewinn/Verlust</option>
+  </select>
+  <button id="refresh">Preise aktualisieren</button>
+</div>
+<div id="col" class="list"></div>
+
+<div class="row" style="margin-top:14px">
+  <button id="exp">Als JSON sichern</button>
+  <button id="csv">Als CSV exportieren</button>
+  <button id="imp">JSON laden</button>
+  <input type="file" id="file" accept=".json" hidden>
+</div>
+<p class="foot">Preise: Cardmarket-Durchschnittspreise in EUR, geliefert über die Scryfall-API (täglich aktualisiert). Die Sammlung wird nur in diesem Browser gespeichert – sichere sie regelmäßig als JSON.</p>
+
+<script>
+const KEY='mtg-sammlung-v1';
+let col=[];
+try{col=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){col=[]}
+const $=id=>document.getElementById(id);
+const eur=n=>n==null?'–':n.toLocaleString('de-DE',{style:'currency',currency:'EUR'});
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(col))}catch(e){}};
+const price=c=>{const p=c.foil?c.eurFoil:c.eur;return p==null?null:p};
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+function fromScry(d,foil){
+  const img=(d.image_uris||(d.card_faces&&d.card_faces[0].image_uris)||{}).small||'';
+  return{id:d.id,name:d.name,set:d.set_name,setCode:d.set.toUpperCase(),num:d.collector_number,
+    img,foil:foil,qty:1,buy:null,
+    eur:d.prices.eur?parseFloat(d.prices.eur):null,
+    eurFoil:d.prices.eur_foil?parseFloat(d.prices.eur_foil):null,
+    cm:(d.purchase_uris&&d.purchase_uris.cardmarket)||'',updated:new Date().toISOString()};
+}
+
+async function search(exact){
+  const raw=$('q').value.trim(); if(!raw)return;
+  hideSg();
+  const q=exact?'!"'+exact+'"':raw;
+  const r=$('res'); r.innerHTML='<div class="msg">Suche läuft …</div>';
+  try{
+    const u='https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q='+encodeURIComponent(q);
+    const resp=await fetch(u);
+    if(!resp.ok){r.innerHTML='<div class="msg">Keine Karte gefunden. Prüfe die Schreibweise (englischer Name).</div>';return}
+    const j=await resp.json();
+    r.innerHTML='';
+    j.data.slice(0,100).forEach(d=>{
+      const el=document.createElement('div');el.className='it';
+      const c=fromScry(d,false);
+      const fin=d.finishes||[];
+      el.innerHTML=`<img src="${esc(c.img)}" alt="" loading="lazy"><div><div class="n">${esc(exact?d.set_name:d.name)}</div><div class="m">${esc(exact?'':d.set_name+' · ')}#${esc(d.collector_number)} · ${esc((d.released_at||'').slice(0,4))}</div></div><div class="r">${eur(c.eur)}<div class="ctl"></div></div>`;
+      const ctl=el.querySelector('.ctl');
+      if(fin.includes('nonfoil')||fin.length===0)ctl.append(btn('+ Normal',()=>add(d,false)));
+      if(fin.includes('foil')||fin.includes('etched'))ctl.append(btn('+ Foil',()=>add(d,true)));
+      r.append(el);
+    });
+    if(j.total_cards>100)r.insertAdjacentHTML('beforeend','<div class="msg">Nur die 100 neuesten Drucke gezeigt.</div>');
+  }catch(e){r.innerHTML='<div class="msg">Verbindung zu Scryfall fehlgeschlagen.</div>'}
+}
+let tm;
+$('q').addEventListener('input',()=>{clearTimeout(tm);const v=$('q').value.trim();if(v.length<2){hideSg();return}tm=setTimeout(()=>suggest(v),200)});
+async function suggest(v){
+  try{
+    const j=await (await fetch('https://api.scryfall.com/cards/autocomplete?q='+encodeURIComponent(v))).json();
+    if($('q').value.trim()!==v)return;
+    const sg=$('sg');sg.innerHTML='';
+    (j.data||[]).forEach(n=>{const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>{$('q').value=n;search(n)};sg.append(b)});
+    sg.hidden=!sg.children.length;
+  }catch(e){}
+}
+function hideSg(){$('sg').hidden=true}
+document.addEventListener('click',e=>{if(!e.target.closest('.sw'))hideSg()});
+function btn(t,f){const b=document.createElement('button');b.textContent=t;b.onclick=f;return b}
+function add(d,foil){
+  const ex=col.find(c=>c.id===d.id&&c.foil===foil);
+  if(ex)ex.qty++; else col.push(fromScry(d,foil));
+  save();render();
+}
+
+function render(){
+  const f=$('f').value.toLowerCase(), s=$('sort').value;
+  let list=col.filter(c=>c.name.toLowerCase().includes(f));
+  const val=c=>(price(c)||0)*c.qty, diff=c=>c.buy!=null&&price(c)!=null?(price(c)-c.buy)*c.qty:-Infinity;
+  list.sort((a,b)=>s==='name'?a.name.localeCompare(b.name):s==='diff'?diff(b)-diff(a):val(b)-val(a));
+  const box=$('col'); box.innerHTML='';
+  if(!col.length)box.innerHTML='<div class="msg">Noch leer. Suche oben eine Karte und füge sie hinzu.</div>';
+  list.forEach(c=>{
+    const p=price(c), d=c.buy!=null&&p!=null?(p-c.buy)*c.qty:null;
+    const el=document.createElement('div');el.className='it';
+    el.innerHTML=`<img src="${esc(c.img)}" alt="" loading="lazy">
+    <div><div class="n">${esc(c.name)}${c.foil?' ✦':''}</div><div class="m">${esc(c.set)} · #${esc(c.num)}· <a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div><div class="ctl"></div></div>
+    <div class="r"><b>${eur(p==null?null:p*c.qty)}</b><div class="m">${c.qty} × ${eur(p)}</div>${d!=null?`<div class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)}</div>`:''}</div>`;
+    const ctl=el.querySelector('.ctl');
+    ctl.append(btn('−',()=>{c.qty--;if(c.qty<1)col=col.filter(x=>x!==c);save();render()}));
+    ctl.append(btn('+',()=>{c.qty++;save();render()}));
+    const inp=document.createElement('input');inp.type='number';inp.step='0.01';inp.min='0';inp.placeholder='Kauf €';
+    inp.setAttribute('aria-label','Einkaufspreis pro Karte');
+    if(c.buy!=null)inp.value=c.buy;
+    inp.onchange=()=>{c.buy=inp.value===''?null:parseFloat(inp.value);save();render()};
+    ctl.append(inp);
+    box.append(el);
+  });
+  const tv=col.reduce((a,c)=>a+val(c),0);
+  const withBuy=col.filter(c=>c.buy!=null);
+  const tb=withBuy.reduce((a,c)=>a+c.buy*c.qty,0);
+  const tm=withBuy.reduce((a,c)=>a+val(c),0);
+  $('s-val').textContent=eur(tv);
+  $('s-buy').textContent=withBuy.length?eur(tb):'–';
+  const dd=tm-tb;
+  $('s-diff').textContent=withBuy.length?(dd>=0?'+':'')+eur(dd):'–';
+  $('s-diff').className=withBuy.length?(dd>=0?'up':'down'):'';
+  $('cnt').textContent=col.length?`(${col.reduce((a,c)=>a+c.qty,0)} Karten)`:'';
+}
+
+async function refresh(){
+  if(!col.length)return;
+  const b=$('refresh');b.disabled=true;b.textContent='Aktualisiere …';
+  try{
+    const ids=[...new Set(col.map(c=>c.id))];
+    for(let i=0;i<ids.length;i+=75){
+      const resp=await fetch('https://api.scryfall.com/cards/collection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identifiers:ids.slice(i,i+75).map(id=>({id}))})});
+      const j=await resp.json();
+      (j.data||[]).forEach(d=>col.filter(c=>c.id===d.id).forEach(c=>{
+        c.eur=d.prices.eur?parseFloat(d.prices.eur):null;
+        c.eurFoil=d.prices.eur_foil?parseFloat(d.prices.eur_foil):null;
+        c.updated=new Date().toISOString();
+      }));
+    }
+    save();render();
+  }catch(e){alert('Aktualisierung fehlgeschlagen.')}
+  b.disabled=false;b.textContent='Preise aktualisieren';
+}
+
+function download(name,text,type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();
+}
+$('go').onclick=()=>search();
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'){const f=$('sg').firstElementChild;if(f&&!$('sg').hidden)f.click();else search()}});
+$('f').oninput=render;$('sort').onchange=render;
+$('refresh').onclick=refresh;
+$('exp').onclick=()=>download('mtg-sammlung.json',JSON.stringify(col,null,1),'application/json');
+$('csv').onclick=()=>{
+  const rows=[['Name','Set','Nr','Foil','Anzahl','Einkauf','Preis EUR','Summe EUR']];
+  col.forEach(c=>rows.push([c.name,c.set,c.num,c.foil?'ja':'nein',c.qty,c.buy??'',price(c)??'',price(c)!=null?(price(c)*c.qty).toFixed(2):'']));
+  download('mtg-sammlung.csv',rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n'),'text/csv');
+};
+$('imp').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  try{const j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j)){col=j;save();render()}}catch(x){alert('Datei nicht lesbar.')}
+};
+
+
+const imgOf=d=>((d.image_uris||(d.card_faces&&d.card_faces[0].image_uris)||{}).small)||'';
+async function resolveCard(name,set,num){
+  try{
+    if(set&&num){const r=await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(set.toLowerCase())}/${encodeURIComponent(num)}`);if(r.ok){const d=await r.json();if(d.name.toLowerCase().startsWith(name.toLowerCase().split(' // ')[0]))return d}}
+    const r=await fetch('https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(name)+(set?'&set='+encodeURIComponent(set.toLowerCase()):''));
+    if(r.ok)return await r.json();
+    if(set){const r2=await fetch('https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(name));if(r2.ok)return await r2.json()}
+  }catch(e){}
+  return null;
+}
+$('lgo').onclick=async()=>{
+  const lines=$('lst').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const st=$('lst-st');let ok=0;const bad=[];
+  for(let i=0;i<lines.length;i++){
+    st.textContent=`Importiere ${i+1}/${lines.length} …`;
+    const m=lines[i].match(/^(?:(\d+)\s*x?\s+)?(.+?)(?:\s+\(([A-Za-z0-9]+)\)(?:\s+([^\s*]+))?)?(?:\s+(\*F\*|foil))?\s*$/i);
+    if(!m){bad.push(lines[i]);continue}
+    const d=await resolveCard(m[2],m[3]||'',m[4]||'');
+    if(!d){bad.push(lines[i]);continue}
+    const q=parseInt(m[1]||'1',10)||1;
+    pend.push({d,foil:!!m[5],on:true,thumb:null,qty:q});
+    ok++;await new Promise(r=>setTimeout(r,110));
+  }
+  renderPend();
+  st.textContent=`${ok} Zeilen zur Prüfung bereit.`+(bad.length?` Nicht erkannt: ${bad.join(' | ')}`:'');
+  if(!bad.length)$('lst').value='';
+};
+const MODEL='claude-sonnet-5-5';
+let pend=[];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+$('key').onclick=()=>{const k=prompt('Anthropic API-Key (nur lokal im Browser gespeichert):',localStorage.getItem('mtg-key')||'');if(k!==null){try{localStorage.setItem('mtg-key',k.trim())}catch(e){}}};
+$('photos').onchange=async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  const key=localStorage.getItem('mtg-key');
+  if(!key){alert('Bitte zuerst den API-Key hinterlegen.');return}
+  const [cols,rows]=$('grid').value.split('x').map(Number);
+  for(let n=0;n<files.length;n++){
+    $('pst').textContent=`Foto ${n+1}/${files.length}: Erkennung läuft …`;
+    try{await processPhoto(files[n],cols,rows,key)}catch(x){$('pst').textContent='Fehler: '+x.message;return}
+  }
+  $('pst').textContent=`Fertig: ${pend.length} Karten erkannt. Bitte prüfen (Edition, Foil) und übernehmen.`;
+};
+async function processPhoto(file,cols,rows,key){
+  const bmp=await createImageBitmap(file,{imageOrientation:'from-image'});
+  const cw=bmp.width/cols,ch=bmp.height/rows,cells=[],k=Math.min(1,800/Math.max(cw,ch));
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+    const cv=document.createElement('canvas');cv.width=Math.round(cw*k);cv.height=Math.round(ch*k);
+    cv.getContext('2d').drawImage(bmp,c*cw,r*ch,cw,ch,0,0,cv.width,cv.height);
+    cells.push(cv.toDataURL('image/jpeg',0.85));
+  }
+  const content=[];
+  cells.forEach((u,i)=>{content.push({type:'text',text:'Bild '+i+':'});content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:u.split(',')[1]}})});
+  content.push({type:'text',text:'Jedes Bild zeigt eine Ordner-Tasche mit höchstens einer Magic-Karte. Antworte NUR mit einem JSON-Array ohne Markdown: [{"i":0,"name":"englischer Kartenname, null bei leerer Tasche","set":"Setkürzel falls lesbar sonst null","num":"Sammlernummer falls lesbar sonst null"}]. Bei deutschen oder anderssprachigen Karten gib den englischen Originalnamen an.'});
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:MODEL,max_tokens:2000,messages:[{role:'user',content}]})});
+  if(!resp.ok)throw new Error('API-Fehler '+resp.status);
+  const j=await resp.json();
+  const arr=JSON.parse(j.content.map(b=>b.text||'').join('').replace(/```json|```/g,'').trim());
+  for(const a of arr){
+    if(!a.name)continue;
+    const d=await match(a);
+    if(d)pend.push({d,foil:false,on:true,thumb:cells[a.i]});
+    await sleep(110);
+  }
+  renderPend();
+}
+async function match(a){
+  try{
+    if(a.set&&a.num){
+      const r=await fetch(`https://api.scryfall.com/cards/${encodeURIComponent(a.set.toLowerCase())}/${encodeURIComponent(a.num)}`);
+      if(r.ok){const d=await r.json();if(d.name.toLowerCase().startsWith(a.name.toLowerCase()))return d}
+    }
+    const r=await fetch('https://api.scryfall.com/cards/named?fuzzy='+encodeURIComponent(a.name));
+    return r.ok?await r.json():null;
+  }catch(e){return null}
+}
+function renderPend(){
+  const b=$('pend');b.innerHTML='';
+  pend.forEach(p=>{
+    const pr=p.foil?p.d.prices.eur_foil:p.d.prices.eur;
+    const el=document.createElement('div');el.className='it';
+    el.innerHTML=`<img src="${p.thumb||imgOf(p.d)}" alt="Karte"><div><div class="n">${esc(p.d.name)}${p.qty>1?' × '+p.qty:''}</div><div class="ctl"></div></div><div class="r">${eur(pr?parseFloat(pr):null)}</div>`;
+    const ctl=el.querySelector('.ctl');
+    const sel=document.createElement('select');sel.setAttribute('aria-label','Edition');
+    sel.innerHTML=`<option>${esc(p.d.set_name)} #${esc(p.d.collector_number)}</option>`;
+    sel.onfocus=async()=>{
+      if(p.list)return;
+      try{const j=await (await fetch(p.d.prints_search_uri)).json();p.list=j.data;
+        sel.innerHTML=j.data.map((x,k)=>`<option value="${k}"${x.id===p.d.id?' selected':''}>${esc(x.set_name)} #${esc(x.collector_number)}</option>`).join('')}catch(e){}
+    };
+    sel.onchange=()=>{p.d=p.list[+sel.value];p.list=null;renderPend()};
+    const fl=document.createElement('label');fl.innerHTML='<input type="checkbox"'+(p.foil?' checked':'')+'> Foil';
+    fl.firstChild.onchange=e=>{p.foil=e.target.checked;renderPend()};
+    const ok=btn('✓ Bestätigen',()=>{for(let k=0;k<(p.qty||1);k++)add(p.d,p.foil);pend=pend.filter(x=>x!==p);renderPend()});
+    ok.className='p';
+    const no=btn('✕',()=>{pend=pend.filter(x=>x!==p);renderPend()});
+    no.setAttribute('aria-label','Verwerfen');
+    ctl.append(sel,fl,ok,no);
+    b.append(el);
+  });
+  $('rev').hidden=!pend.length;
+}
+$('take').onclick=()=>{pend.forEach(p=>{for(let k=0;k<(p.qty||1);k++)add(p.d,p.foil)});pend=[];renderPend();$('pst').textContent='Übernommen.'};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();
+</script>
+</body>
+</html>
