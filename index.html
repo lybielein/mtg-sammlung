@@ -42,6 +42,7 @@ a{color:var(--acc)}
 .gal button{padding:4px;text-align:left;font-size:12px;line-height:1.3}
 .gal img{width:100%;border-radius:4px;display:block;margin-bottom:3px}
 .gal .sel{outline:3px solid var(--acc)}
+.rl{font-size:11px;border:1px solid var(--acc);color:var(--acc);border-radius:4px;padding:0 4px;margin-left:4px}
 .foot{margin:24px 0;color:var(--mute);font-size:13px}
 </style>
 </head>
@@ -52,6 +53,26 @@ a{color:var(--acc)}
   <div><b id="s-buy">–</b><span>Einkaufswert</span></div>
   <div><b id="s-diff">–</b><span>Differenz</span></div>
 </div>
+
+<div id="s-rl" class="msg"></div>
+
+<h2>Wertverlauf</h2>
+<div class="row">
+  <select id="h-range" aria-label="Zeitraum"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="365">1 Jahr</option><option value="0">Alles</option></select>
+  <select id="h-rl" aria-label="Reserved List"><option value="">Alle Karten</option><option value="1">Nur Reserved List</option><option value="0">Ohne Reserved List</option></select>
+  <select id="h-fin" aria-label="Foil"><option value="">Foil &amp; Normal</option><option value="f">Nur Foil</option><option value="n">Nur Normal</option></select>
+  <select id="h-set" aria-label="Edition"></select>
+  <select id="h-card" aria-label="Karte"></select>
+  <select id="h-type" aria-label="Kartenart"></select>
+  <select id="h-rar" aria-label="Seltenheit"></select>
+</div>
+<div class="row" style="margin-top:6px;align-items:center">
+  <button id="h-add">+ Als Vergleichslinie speichern</button>
+  <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="h-rel"> Relativ (%)</label>
+</div>
+<div id="h-leg" class="row" style="margin-top:6px"></div>
+<div class="pt" style="padding:6px"><svg id="h-svg" viewBox="0 0 600 220" width="100%" role="img" aria-label="Wertverlauf"></svg></div>
+<div id="h-info" class="msg"></div>
 
 <h2>Karte hinzufügen</h2>
 <div class="row">
@@ -90,8 +111,16 @@ a{color:var(--acc)}
   <select id="sort" aria-label="Sortierung">
     <option value="val">Wert absteigend</option>
     <option value="name">Name</option>
-    <option value="diff">Gewinn/Verlust</option>
+    <option value="diff">Gewinn/Verlust (zum Kauf)</option>
+    <option value="mup">Größter Anstieg (€)</option>
+    <option value="mdown">Größter Verlust (€)</option>
+    <option value="rup">Größter Anstieg (%)</option>
+    <option value="rdown">Größter Verlust (%)</option>
+    <option value="msmall">Kleinste Bewegung (€)</option>
+    <option value="rsmall">Kleinste Bewegung (%)</option>
   </select>
+  <select id="mrange" aria-label="Zeitraum für Bewegung"><option value="7">Bewegung: 7 Tage</option><option value="30" selected>Bewegung: 30 Tage</option><option value="365">Bewegung: 1 Jahr</option><option value="0">Bewegung: Alles</option></select>
+  <select id="frl" aria-label="Reserved List"><option value="">Alle</option><option value="1">Nur Reserved List</option></select>
   <button id="refresh">Preise aktualisieren</button>
 </div>
 <div id="col" class="list"></div>
@@ -110,13 +139,13 @@ let col=[];
 try{col=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){col=[]}
 const $=id=>document.getElementById(id);
 const eur=n=>n==null?'–':n.toLocaleString('de-DE',{style:'currency',currency:'EUR'});
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(col))}catch(e){}};
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(col))}catch(e){}snap()};
 const price=c=>{const p=c.foil?c.eurFoil:c.eur;return p==null?null:p};
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 function fromScry(d,foil){
   const img=(d.image_uris||(d.card_faces&&d.card_faces[0].image_uris)||{}).small||'';
-  return{id:d.id,name:d.name,set:d.set_name,setCode:d.set.toUpperCase(),num:d.collector_number,
+  return{id:d.id,rl:!!d.reserved,rar:d.rarity,type:d.type_line||((d.card_faces&&d.card_faces[0].type_line)||''),name:d.name,set:d.set_name,setCode:d.set.toUpperCase(),num:d.collector_number,
     img,foil:foil,qty:1,buy:null,
     eur:d.prices.eur?parseFloat(d.prices.eur):null,
     eurFoil:d.prices.eur_foil?parseFloat(d.prices.eur_foil):null,
@@ -169,17 +198,22 @@ function add(d,foil){
 
 function render(){
   const f=$('f').value.toLowerCase(), s=$('sort').value;
-  let list=col.filter(c=>c.name.toLowerCase().includes(f));
+  let list=col.filter(c=>c.name.toLowerCase().includes(f)&&(!$('frl').value||c.rl));
   const val=c=>(price(c)||0)*c.qty, diff=c=>c.buy!=null&&price(c)!=null?(price(c)-c.buy)*c.qty:-Infinity;
-  list.sort((a,b)=>s==='name'?a.name.localeCompare(b.name):s==='diff'?diff(b)-diff(a):val(b)-val(a));
+  const mv=moves(+$('mrange').value),M=c=>mv.get(ck(c)),ml=$('mrange').selectedOptions[0].textContent.replace('Bewegung: ','');
+  const nul=(fa,dir)=>(a,b)=>{const x=fa(a),y=fa(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return dir*(x-y)};
+  const S={val:(a,b)=>val(b)-val(a),name:(a,b)=>a.name.localeCompare(b.name),diff:(a,b)=>diff(b)-diff(a),
+    mup:nul(c=>M(c)?M(c).abs:null,-1),mdown:nul(c=>M(c)?M(c).abs:null,1),rup:nul(c=>M(c)?M(c).rel:null,-1),rdown:nul(c=>M(c)?M(c).rel:null,1),
+    msmall:nul(c=>M(c)?Math.abs(M(c).abs):null,1),rsmall:nul(c=>M(c)?Math.abs(M(c).rel):null,1)};
+  list.sort(S[s]||S.val);
   const box=$('col'); box.innerHTML='';
   if(!col.length)box.innerHTML='<div class="msg">Noch leer. Suche oben eine Karte und füge sie hinzu.</div>';
   list.forEach(c=>{
-    const p=price(c), d=c.buy!=null&&p!=null?(p-c.buy)*c.qty:null;
+    const p=price(c), d=c.buy!=null&&p!=null?(p-c.buy)*c.qty:null, mm=M(c);
     const el=document.createElement('div');el.className='it';
     el.innerHTML=`<img src="${esc(c.img)}" alt="" loading="lazy">
-    <div><div class="n">${esc(c.name)}${c.foil?' ✦':''}</div><div class="m">${esc(c.set)} · #${esc(c.num)}· <a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div><div class="ctl"></div></div>
-    <div class="r"><b>${eur(p==null?null:p*c.qty)}</b><div class="m">${c.qty} × ${eur(p)}</div>${d!=null?`<div class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)}</div>`:''}</div>`;
+    <div><div class="n">${esc(c.name)}${c.foil?' ✦':''}${c.rl?' <span class="rl">RL</span>':''}</div><div class="m">${esc(c.set)} · #${esc(c.num)}· <a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div><div class="ctl"></div></div>
+    <div class="r"><b>${eur(p==null?null:p*c.qty)}</b><div class="m">${c.qty} × ${eur(p)}</div>${d!=null?`<div class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)}</div>`:''}${mm?`<div class="m ${mm.abs>=0?'up':'down'}">${ml}: ${mm.abs>=0?'+':''}${eur(mm.abs)} (${mm.rel>=0?'+':''}${(mm.rel*100).toFixed(1)} %)</div>`:''}</div>`;
     const ctl=el.querySelector('.ctl');
     ctl.append(btn('−',()=>{c.qty--;if(c.qty<1)col=col.filter(x=>x!==c);save();render()}));
     ctl.append(btn('+',()=>{c.qty++;save();render()}));
@@ -200,6 +234,9 @@ function render(){
   $('s-diff').textContent=withBuy.length?(dd>=0?'+':'')+eur(dd):'–';
   $('s-diff').className=withBuy.length?(dd>=0?'up':'down'):'';
   $('cnt').textContent=col.length?`(${col.reduce((a,c)=>a+c.qty,0)} Karten)`:'';
+  const rlc=col.filter(c=>c.rl),rlv=rlc.reduce((a,c)=>a+val(c),0);
+  $('s-rl').textContent=(rlc.length?`Davon Reserved List: ${eur(rlv)} (${rlc.reduce((a,c)=>a+c.qty,0)} Karten). `:'')+(col.some(c=>c.rl===undefined||c.rar===undefined)?'Tippe auf „Preise aktualisieren“, damit ältere Karten Reserved-List-Markierung, Seltenheit und Kartenart bekommen.':'');
+  renderHist();
 }
 
 async function refresh(){
@@ -213,6 +250,7 @@ async function refresh(){
       (j.data||[]).forEach(d=>col.filter(c=>c.id===d.id).forEach(c=>{
         c.eur=d.prices.eur?parseFloat(d.prices.eur):null;
         c.eurFoil=d.prices.eur_foil?parseFloat(d.prices.eur_foil):null;
+        c.rl=!!d.reserved;c.rar=d.rarity;c.type=d.type_line||c.type||'';
         c.updated=new Date().toISOString();
       }));
     }
@@ -227,9 +265,9 @@ function download(name,text,type){
 }
 $('go').onclick=()=>search();
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter'){const f=$('sg').firstElementChild;if(f&&!$('sg').hidden)f.click();else search()}});
-$('f').oninput=render;$('sort').onchange=render;
+$('f').oninput=render;$('sort').onchange=render;$('frl').onchange=render;$('mrange').onchange=render;
 $('refresh').onclick=refresh;
-$('exp').onclick=()=>download('mtg-sammlung.json',JSON.stringify(col,null,1),'application/json');
+$('exp').onclick=()=>download('mtg-sammlung.json',JSON.stringify({sammlung:col,verlauf:hist},null,1),'application/json');
 $('csv').onclick=()=>{
   const rows=[['Name','Set','Nr','Foil','Anzahl','Einkauf','Preis EUR','Summe EUR']];
   col.forEach(c=>rows.push([c.name,c.set,c.num,c.foil?'ja':'nein',c.qty,c.buy??'',price(c)??'',price(c)!=null?(price(c)*c.qty).toFixed(2):'']));
@@ -237,11 +275,12 @@ $('csv').onclick=()=>{
 };
 $('imp').onclick=()=>$('file').click();
 $('file').onchange=async e=>{
-  try{const j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j)){col=j;save();render()}}catch(x){alert('Datei nicht lesbar.')}
+  try{const j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j)){col=j;save();render()}else if(j&&Array.isArray(j.sammlung)){col=j.sammlung;hist=j.verlauf||{};save();render()}}catch(x){alert('Datei nicht lesbar.')}
 };
 
 
 const variant=d=>{const v=[],fe=d.frame_effects||[];
+  if(d.reserved)v.push('Reserved List');
   if(d.border_color==='borderless')v.push('Borderless');
   if(fe.includes('showcase'))v.push('Showcase');
   if(fe.includes('extendedart'))v.push('Extended Art');
@@ -284,6 +323,92 @@ $('lgo').onclick=async()=>{
   st.textContent=`${ok} Zeilen zur Prüfung bereit.`+(bad.length?` Nicht erkannt: ${bad.join(' | ')}`:'');
   if(!bad.length)$('lst').value='';
 };
+
+const HK='mtg-hist-v2',CK='mtg-cmp-v1';
+let hist={},cmp=[];
+try{hist=JSON.parse(localStorage.getItem(HK)||'{}')}catch(e){}
+try{cmp=JSON.parse(localStorage.getItem(CK)||'[]')}catch(e){}
+const ck=c=>c.id.slice(0,8)+(c.foil?'f':'n');
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+function snap(){
+  if(!col.length)return;
+  const m={};col.forEach(c=>{const p=price(c);if(p!=null)m[ck(c)]=[Math.round(p*100)/100,c.qty]});
+  hist[today()]=m;
+  const cut=new Date(Date.now()-90*864e5).toISOString().slice(0,10);
+  Object.keys(hist).forEach(d=>{if(d<cut&&!d.endsWith('-01')&&!d.endsWith('-15'))delete hist[d]});
+  try{localStorage.setItem(HK,JSON.stringify(hist))}catch(e){}
+}
+const TYPES=[['creature','Kreatur'],['instant','Spontanzauber'],['sorcery','Hexerei'],['enchantment','Verzauberung'],['artifact','Artefakt'],['land','Land'],['planeswalker','Planeswalker'],['battle','Schlacht']];
+const RARS=[['common','Common'],['uncommon','Uncommon'],['rare','Rare'],['mythic','Mythic']];
+$('h-type').innerHTML='<option value="">Alle Kartenarten</option>'+TYPES.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+$('h-rar').innerHTML='<option value="">Alle Seltenheiten</option>'+RARS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+const COLORS=['#0f6b6b','#c2410c','#7c3aed','#0369a1','#be123c','#4d7c0f'];
+const curF=()=>({rl:$('h-rl').value,fin:$('h-fin').value,set:$('h-set').value,card:$('h-card').value,type:$('h-type').value,rar:$('h-rar').value});
+const fmatch=(c,f)=>(f.rl===''||(f.rl==='1')===!!c.rl)&&(!f.fin||(f.fin==='f')===c.foil)&&(!f.set||c.set===f.set)&&(!f.card||c.name===f.card)&&(!f.type||(c.type||'').toLowerCase().includes(f.type))&&(!f.rar||c.rar===f.rar);
+const lab=f=>{const p=[];if(f.rl==='1')p.push('RL');if(f.rl==='0')p.push('ohne RL');if(f.fin==='f')p.push('Foil');if(f.fin==='n')p.push('Normal');if(f.set)p.push(f.set);if(f.card)p.push(f.card);if(f.type)p.push(TYPES.find(t=>t[0]===f.type)[1]);if(f.rar)p.push(RARS.find(t=>t[0]===f.rar)[1]);return p.join(' · ')||'Alles'};
+function moves(range){
+  const cut=range?new Date(Date.now()-range*864e5).toISOString().slice(0,10):'';
+  const inr=Object.keys(hist).sort().filter(d=>d>=cut),mv=new Map();
+  if(inr.length<2)return mv;
+  const lastDay=inr[inr.length-1];
+  col.forEach(c=>{
+    const k=ck(c);let u0=null,d0=null;
+    for(const d of inr){const e=hist[d][k];if(Array.isArray(e)){u0=e[0];d0=d;break}}
+    const u1=price(c);
+    if(u0>0&&u1!=null&&d0!==lastDay)mv.set(k,{abs:(u1-u0)*c.qty,rel:(u1-u0)/u0});
+  });
+  return mv;
+}
+function renderHist(){
+  const fill=(id,vals,all)=>{const el=$(id),cur=el.value;el.innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option>${esc(v)}</option>`).join('');el.value=vals.includes(cur)?cur:''};
+  fill('h-set',[...new Set(col.map(c=>c.set))].sort(),'Alle Editionen');
+  fill('h-card',[...new Set(col.map(c=>c.name))].sort(),'Alle Namen');
+  const range=+$('h-range').value,rel=$('h-rel').checked;
+  let days=Object.keys(hist).sort();
+  if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
+  const series=[{f:curF(),live:true},...cmp.map((f,i)=>({f,i}))].map((q,n)=>{
+    const keys=new Set(col.filter(c=>fmatch(c,q.f)).map(ck));
+    q.color=COLORS[n%COLORS.length];
+    q.abs=days.map(d=>Object.entries(hist[d]).reduce((a,[k,e])=>a+(keys.has(k)&&Array.isArray(e)?e[0]*e[1]:0),0));
+    const first=q.abs.find(v=>v>0);
+    q.v=rel?q.abs.map(v=>first?(v/first-1)*100:null):q.abs;
+    return q;
+  });
+  const leg=$('h-leg');leg.innerHTML='';
+  series.forEach(q=>{
+    const sp=document.createElement('span');sp.className='rl';sp.style.cssText=`border-color:${q.color};color:${q.color};margin:0`;
+    sp.textContent='● '+lab(q.f)+(q.live?' (aktuell)':'')+' ';
+    if(!q.live){const x=document.createElement('button');x.textContent='✕';x.style.cssText='padding:0 5px;border:0;background:none;color:inherit';x.setAttribute('aria-label','Linie entfernen');
+      x.onclick=()=>{cmp.splice(q.i,1);try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};sp.append(x)}
+    leg.append(sp);
+  });
+  const svg=$('h-svg'),info=$('h-info');
+  if(!days.length){svg.innerHTML='';info.textContent='Noch keine Verlaufsdaten. Pro Tag wird ein Wert gespeichert.';return}
+  const W=600,H=220,L=56,R=12,T=12,B=26;
+  const all=series.flatMap(q=>q.v).filter(v=>v!=null);
+  let lo=Math.min(...all),hi=Math.max(...all);
+  if(hi===lo){hi+=1;lo-=1}
+  const pad=(hi-lo)*.1;hi+=pad;lo=rel?lo-pad:Math.max(0,lo-pad);
+  const x=i=>days.length===1?(L+W-R)/2:L+(W-L-R)*i/(days.length-1),y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  const tx=(px,py,t,a)=>`<text x="${px}" y="${py}" text-anchor="${a}" font-size="11" fill="var(--mute)">${t}</text>`;
+  const fm=v=>rel?(v>=0?'+':'')+Math.round(v)+' %':Math.round(v)+' €';
+  let out=`<line x1="${L}" y1="${y(lo)}" x2="${W-R}" y2="${y(lo)}" stroke="var(--line)"/><line x1="${L}" y1="${y(hi)}" x2="${W-R}" y2="${y(hi)}" stroke="var(--line)"/>`;
+  if(rel&&lo<0&&hi>0)out+=`<line x1="${L}" y1="${y(0)}" x2="${W-R}" y2="${y(0)}" stroke="var(--line)" stroke-dasharray="4 4"/>`;
+  out+=tx(L-6,y(hi)+4,fm(hi),'end')+tx(L-6,y(lo)+4,fm(lo),'end')+tx(L,H-6,days[0],'start')+tx(W-R,H-6,days[days.length-1],'end');
+  series.forEach(q=>{
+    let path='',pen=false;
+    q.v.forEach((v,i)=>{if(v==null){pen=false;return}path+=`${pen?'L':'M'}${x(i).toFixed(1)},${y(v).toFixed(1)} `;pen=true});
+    out+=`<path d="${path}" fill="none" stroke="${q.color}" stroke-width="2.5"/>`;
+    if(days.length<=40)q.v.forEach((v,i)=>{if(v!=null)out+=`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${q.color}"/>`});
+  });
+  svg.innerHTML=out;
+  info.innerHTML=series.map(q=>{
+    const last=q.abs[q.abs.length-1],first=q.abs.find(v=>v>0),d=first!=null?last-first:null;
+    return `<div><span style="color:${q.color}">●</span> ${esc(lab(q.f))}: <b>${eur(last)}</b>`+(days.length>1&&d!=null?` · <span class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)} (${(d/first*100).toFixed(1)} %)</span>`:'')+'</div>';
+  }).join('')+(days.length<2?'Der Verlauf entsteht ab jetzt, ein Punkt pro Tag.':'');
+}
+['h-range','h-rl','h-fin','h-set','h-card','h-type','h-rar','h-rel'].forEach(id=>$(id).onchange=renderHist);
+$('h-add').onclick=()=>{if(cmp.length>=5)return;cmp.push(curF());try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};
 const MODEL='claude-sonnet-5-5';
 let pend=[];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -364,6 +489,7 @@ function renderPend(){
 }
 $('take').onclick=()=>{pend.forEach(p=>{for(let k=0;k<(p.qty||1);k++)add(p.d,p.foil)});pend=[];renderPend();$('pst').textContent='Übernommen.'};
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+snap();
 render();
 </script>
 </body>
