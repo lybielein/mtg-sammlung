@@ -43,6 +43,10 @@ a{color:var(--acc)}
 .gal img{width:100%;border-radius:4px;display:block;margin-bottom:3px}
 .gal .sel{outline:3px solid var(--acc)}
 .rl{font-size:11px;border:1px solid var(--acc);color:var(--acc);border-radius:4px;padding:0 4px;margin-left:4px}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;margin-top:6px;padding:2px 10px}
+summary{cursor:pointer;padding:10px 0}
+details>.list{margin-bottom:8px}
+dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;width:min(420px,92vw)}
 .foot{margin:24px 0;color:var(--mute);font-size:13px}
 </style>
 </head>
@@ -65,6 +69,7 @@ a{color:var(--acc)}
   <select id="h-card" aria-label="Karte"></select>
   <select id="h-type" aria-label="Kartenart"></select>
   <select id="h-rar" aria-label="Seltenheit"></select>
+  <select id="h-deck" aria-label="Deck"></select>
 </div>
 <div class="row" style="margin-top:6px;align-items:center">
   <button id="h-add">+ Als Vergleichslinie speichern</button>
@@ -105,9 +110,17 @@ a{color:var(--acc)}
   <div id="pst" class="msg"></div>
 </div>
 
+<h2>Decks</h2>
+<div class="pt">
+  <div id="decks" class="list"></div>
+  <div class="row" style="margin-top:8px"><input type="search" id="newdeck" placeholder="Neues Deck oder neue Liste" aria-label="Neues Deck"><button class="p" id="adddeck">Anlegen</button></div>
+</div>
+
 <h2>Sammlung <span id="cnt" class="m"></span></h2>
 <div class="row">
   <input type="search" id="f" placeholder="Sammlung filtern" aria-label="Sammlung filtern">
+  <select id="grp" aria-label="Gruppierung"><option value="set">Nach Edition (aufklappbar)</option><option value="">Ohne Gruppierung</option></select>
+  <select id="fdeck" aria-label="Deck"></select>
   <select id="sort" aria-label="Sortierung">
     <option value="val">Wert absteigend</option>
     <option value="name">Name</option>
@@ -133,6 +146,7 @@ a{color:var(--acc)}
 </div>
 <p class="foot">Preise: Cardmarket-Durchschnittspreise in EUR, geliefert über die Scryfall-API (täglich aktualisiert). Die Sammlung wird nur in diesem Browser gespeichert – sichere sie regelmäßig als JSON.</p>
 
+<dialog id="dlg"><div id="dlg-body"></div><div class="row" style="margin-top:10px"><button class="p" id="dlg-x">Fertig</button></div></dialog>
 <script>
 const KEY='mtg-sammlung-v1';
 let col=[];
@@ -145,7 +159,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 
 function fromScry(d,foil){
   const img=(d.image_uris||(d.card_faces&&d.card_faces[0].image_uris)||{}).small||'';
-  return{id:d.id,rl:!!d.reserved,rar:d.rarity,type:d.type_line||((d.card_faces&&d.card_faces[0].type_line)||''),name:d.name,set:d.set_name,setCode:d.set.toUpperCase(),num:d.collector_number,
+  return{id:d.id,decks:[],rl:!!d.reserved,rar:d.rarity,type:d.type_line||((d.card_faces&&d.card_faces[0].type_line)||''),name:d.name,set:d.set_name,setCode:d.set.toUpperCase(),num:d.collector_number,
     img,foil:foil,qty:1,buy:null,
     eur:d.prices.eur?parseFloat(d.prices.eur):null,
     eurFoil:d.prices.eur_foil?parseFloat(d.prices.eur_foil):null,
@@ -197,8 +211,9 @@ function add(d,foil){
 }
 
 function render(){
+  renderDecks();
   const f=$('f').value.toLowerCase(), s=$('sort').value;
-  let list=col.filter(c=>c.name.toLowerCase().includes(f)&&(!$('frl').value||c.rl));
+  let list=col.filter(c=>c.name.toLowerCase().includes(f)&&(!$('frl').value||c.rl)&&(!$('fdeck').value||(c.decks||[]).includes($('fdeck').value)));
   const val=c=>(price(c)||0)*c.qty, diff=c=>c.buy!=null&&price(c)!=null?(price(c)-c.buy)*c.qty:-Infinity;
   const mv=moves(+$('mrange').value),M=c=>mv.get(ck(c)),ml=$('mrange').selectedOptions[0].textContent.replace('Bewegung: ','');
   const nul=(fa,dir)=>(a,b)=>{const x=fa(a),y=fa(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return dir*(x-y)};
@@ -208,7 +223,7 @@ function render(){
   list.sort(S[s]||S.val);
   const box=$('col'); box.innerHTML='';
   if(!col.length)box.innerHTML='<div class="msg">Noch leer. Suche oben eine Karte und füge sie hinzu.</div>';
-  list.forEach(c=>{
+  const rowFor=c=>{
     const p=price(c), d=c.buy!=null&&p!=null?(p-c.buy)*c.qty:null, mm=M(c);
     const el=document.createElement('div');el.className='it';
     el.innerHTML=`<img src="${esc(c.img)}" alt="" loading="lazy">
@@ -222,8 +237,22 @@ function render(){
     if(c.buy!=null)inp.value=c.buy;
     inp.onchange=()=>{c.buy=inp.value===''?null:parseFloat(inp.value);save();render()};
     ctl.append(inp);
-    box.append(el);
-  });
+    ctl.append(btn('Decks'+((c.decks||[]).length?' ('+c.decks.length+')':''),()=>openDeckDlg(c)));
+    return el;
+  };
+  if($('grp').value==='set'){
+    const gs=new Map();list.forEach(c=>{if(!gs.has(c.set))gs.set(c.set,[]);gs.get(c.set).push(c)});
+    [...gs.keys()].sort((a,b)=>a.localeCompare(b)).forEach(k=>{
+      const g=gs.get(k),det=document.createElement('details');
+      const sm=document.createElement('summary');
+      sm.innerHTML=`<b>${esc(k)}</b> <span class="m">· ${g.reduce((a,c)=>a+c.qty,0)} Karten · ${eur(g.reduce((a,c)=>a+val(c),0))}</span>`;
+      det.append(sm);
+      const inner=document.createElement('div');inner.className='list';g.forEach(c=>inner.append(rowFor(c)));det.append(inner);
+      det.open=!!f||openSets.has(k);
+      det.ontoggle=()=>{if(f)return;if(det.open)openSets.add(k);else openSets.delete(k);try{localStorage.setItem(OK,JSON.stringify([...openSets]))}catch(e){}};
+      box.append(det);
+    });
+  }else list.forEach(c=>box.append(rowFor(c)));
   const tv=col.reduce((a,c)=>a+val(c),0);
   const withBuy=col.filter(c=>c.buy!=null);
   const tb=withBuy.reduce((a,c)=>a+c.buy*c.qty,0);
@@ -265,9 +294,9 @@ function download(name,text,type){
 }
 $('go').onclick=()=>search();
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter'){const f=$('sg').firstElementChild;if(f&&!$('sg').hidden)f.click();else search()}});
-$('f').oninput=render;$('sort').onchange=render;$('frl').onchange=render;$('mrange').onchange=render;
+$('f').oninput=render;$('sort').onchange=render;$('frl').onchange=render;$('grp').onchange=render;$('fdeck').onchange=render;$('mrange').onchange=render;
 $('refresh').onclick=refresh;
-$('exp').onclick=()=>download('mtg-sammlung.json',JSON.stringify({sammlung:col,verlauf:hist},null,1),'application/json');
+$('exp').onclick=()=>download('mtg-sammlung.json',JSON.stringify({sammlung:col,verlauf:hist,decks},null,1),'application/json');
 $('csv').onclick=()=>{
   const rows=[['Name','Set','Nr','Foil','Anzahl','Einkauf','Preis EUR','Summe EUR']];
   col.forEach(c=>rows.push([c.name,c.set,c.num,c.foil?'ja':'nein',c.qty,c.buy??'',price(c)??'',price(c)!=null?(price(c)*c.qty).toFixed(2):'']));
@@ -275,7 +304,7 @@ $('csv').onclick=()=>{
 };
 $('imp').onclick=()=>$('file').click();
 $('file').onchange=async e=>{
-  try{const j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j)){col=j;save();render()}else if(j&&Array.isArray(j.sammlung)){col=j.sammlung;hist=j.verlauf||{};save();render()}}catch(x){alert('Datei nicht lesbar.')}
+  try{const j=JSON.parse(await e.target.files[0].text());if(Array.isArray(j)){col=j;save();render()}else if(j&&Array.isArray(j.sammlung)){col=j.sammlung;hist=j.verlauf||{};decks=(j.decks||[...new Set(col.flatMap(c=>c.decks||[]))]).slice();saveDecks();save();render()}}catch(x){alert('Datei nicht lesbar.')}
 };
 
 
@@ -324,6 +353,87 @@ $('lgo').onclick=async()=>{
   if(!bad.length)$('lst').value='';
 };
 
+const DK='mtg-decks-v1',OK='mtg-open-v1';
+let decks=[],openSets=new Set();
+try{decks=JSON.parse(localStorage.getItem(DK)||'[]')}catch(e){}
+try{openSets=new Set(JSON.parse(localStorage.getItem(OK)||'[]'))}catch(e){}
+col.forEach(c=>(c.decks||[]).forEach(d=>{if(!decks.includes(d))decks.push(d)}));
+const saveDecks=()=>{try{localStorage.setItem(DK,JSON.stringify(decks))}catch(e){}};
+function addDeck(n){if(n&&!decks.includes(n)){decks.push(n);saveDecks()}}
+function moveDeck(d,dir){const i=decks.indexOf(d),j=i+dir;if(i<0||j<0||j>=decks.length)return;[decks[i],decks[j]]=[decks[j],decks[i]];saveDecks();render()}
+function renameDeck(o,n){
+  decks=decks.map(d=>d===o?n:d);
+  col.forEach(c=>{if(c.decks)c.decks=c.decks.map(d=>d===o?n:d)});
+  cmp.forEach(f=>{if(f.deck===o)f.deck=n});
+  try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}
+  saveDecks();save();render();
+}
+function deleteDeck(d){
+  decks=decks.filter(x=>x!==d);
+  col.forEach(c=>{if(c.decks)c.decks=c.decks.filter(x=>x!==d)});
+  cmp.forEach(f=>{if(f.deck===d)f.deck=''});
+  try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}
+  saveDecks();save();render();
+}
+function renderDecks(){
+  const el=$('decks');el.innerHTML='';
+  if(!decks.length)el.innerHTML='<div class="msg">Noch keine Decks. Lege eins an und ordne Karten über „Decks“ in der Sammlung zu.</div>';
+  decks.forEach(d=>{
+    const cs=col.filter(c=>(c.decks||[]).includes(d));
+    const row=document.createElement('div');row.className='it';row.style.gridTemplateColumns='1fr auto';
+    row.innerHTML=`<div><div class="n">${esc(d)}</div><div class="m">${cs.reduce((a,c)=>a+c.qty,0)} Karten · ${eur(cs.reduce((a,c)=>a+(price(c)||0)*c.qty,0))}</div></div><div class="ctl"></div>`;
+    const ctl=row.querySelector('.ctl');
+    const up=btn('↑',()=>moveDeck(d,-1)),dn=btn('↓',()=>moveDeck(d,1));
+    up.setAttribute('aria-label','Nach oben');dn.setAttribute('aria-label','Nach unten');
+    ctl.append(up,dn,btn('Karten',()=>openDeckCards(d)));
+    ctl.append(btn('Umbenennen',()=>{const n=(prompt('Neuer Name',d)||'').trim();if(n&&n!==d&&!decks.includes(n))renameDeck(d,n)}));
+    ctl.append(btn('Löschen',()=>{if(confirm('Deck „'+d+'“ löschen? Die Karten bleiben in der Sammlung.'))deleteDeck(d)}));
+    el.append(row);
+  });
+  const fd=$('fdeck'),cur=fd.value;
+  fd.innerHTML='<option value="">Alle Decks</option>'+decks.map(d=>`<option>${esc(d)}</option>`).join('');
+  fd.value=decks.includes(cur)?cur:'';
+}
+function openDeckCards(d){
+  const b=$('dlg-body');let q='';
+  const draw=()=>{
+    b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">Karten für „${esc(d)}“</h3>`;
+    const inp=document.createElement('input');inp.type='search';inp.placeholder='Karten filtern';inp.value=q;inp.style.width='100%';
+    const box=document.createElement('div');box.style.cssText='max-height:50vh;overflow:auto;margin-top:6px';
+    const list=()=>{
+      box.innerHTML='';
+      col.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).sort((x,y)=>x.name.localeCompare(y.name)).forEach(c=>{
+        const l=document.createElement('label');l.style.cssText='display:flex;gap:8px;padding:5px 0;align-items:center';
+        const cb=document.createElement('input');cb.type='checkbox';cb.checked=(c.decks||[]).includes(d);
+        cb.onchange=()=>{c.decks=c.decks||[];if(cb.checked){if(!c.decks.includes(d))c.decks.push(d)}else c.decks=c.decks.filter(z=>z!==d);save();render()};
+        l.append(cb,document.createTextNode(`${c.name}${c.foil?' ✦':''} · ${c.set}`));box.append(l);
+      });
+    };
+    inp.oninput=()=>{q=inp.value;list()};
+    b.append(inp,box);list();
+  };
+  draw();$('dlg').showModal();
+}
+function openDeckDlg(c){
+  const b=$('dlg-body');
+  const draw=()=>{
+    b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">${esc(c.name)} – Decks</h3>`;
+    if(!decks.length)b.insertAdjacentHTML('beforeend','<div class="msg">Noch keine Decks. Lege unten eins an.</div>');
+    decks.forEach(d=>{
+      const l=document.createElement('label');l.style.cssText='display:flex;gap:8px;padding:6px 0;align-items:center';
+      const cb=document.createElement('input');cb.type='checkbox';cb.checked=(c.decks||[]).includes(d);
+      cb.onchange=()=>{c.decks=c.decks||[];if(cb.checked){if(!c.decks.includes(d))c.decks.push(d)}else c.decks=c.decks.filter(x=>x!==d);save();render()};
+      l.append(cb,document.createTextNode(d));b.append(l);
+    });
+    const row=document.createElement('div');row.className='row';
+    const inp=document.createElement('input');inp.placeholder='Neues Deck';inp.setAttribute('aria-label','Neues Deck');
+    row.append(inp,btn('Anlegen & zuordnen',()=>{const n=inp.value.trim();if(!n)return;addDeck(n);c.decks=c.decks||[];if(!c.decks.includes(n))c.decks.push(n);save();render();draw()}));
+    b.append(row);
+  };
+  draw();$('dlg').showModal();
+}
+$('dlg-x').onclick=()=>$('dlg').close();
+$('adddeck').onclick=()=>{const n=$('newdeck').value.trim();if(n){addDeck(n);$('newdeck').value='';render()}};
 const HK='mtg-hist-v2',CK='mtg-cmp-v1';
 let hist={},cmp=[];
 try{hist=JSON.parse(localStorage.getItem(HK)||'{}')}catch(e){}
@@ -343,9 +453,9 @@ const RARS=[['common','Common'],['uncommon','Uncommon'],['rare','Rare'],['mythic
 $('h-type').innerHTML='<option value="">Alle Kartenarten</option>'+TYPES.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
 $('h-rar').innerHTML='<option value="">Alle Seltenheiten</option>'+RARS.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
 const COLORS=['#0f6b6b','#c2410c','#7c3aed','#0369a1','#be123c','#4d7c0f'];
-const curF=()=>({rl:$('h-rl').value,fin:$('h-fin').value,set:$('h-set').value,card:$('h-card').value,type:$('h-type').value,rar:$('h-rar').value});
-const fmatch=(c,f)=>(f.rl===''||(f.rl==='1')===!!c.rl)&&(!f.fin||(f.fin==='f')===c.foil)&&(!f.set||c.set===f.set)&&(!f.card||c.name===f.card)&&(!f.type||(c.type||'').toLowerCase().includes(f.type))&&(!f.rar||c.rar===f.rar);
-const lab=f=>{const p=[];if(f.rl==='1')p.push('RL');if(f.rl==='0')p.push('ohne RL');if(f.fin==='f')p.push('Foil');if(f.fin==='n')p.push('Normal');if(f.set)p.push(f.set);if(f.card)p.push(f.card);if(f.type)p.push(TYPES.find(t=>t[0]===f.type)[1]);if(f.rar)p.push(RARS.find(t=>t[0]===f.rar)[1]);return p.join(' · ')||'Alles'};
+const curF=()=>({rl:$('h-rl').value,fin:$('h-fin').value,set:$('h-set').value,card:$('h-card').value,type:$('h-type').value,rar:$('h-rar').value,deck:$('h-deck').value});
+const fmatch=(c,f)=>(f.rl===''||(f.rl==='1')===!!c.rl)&&(!f.fin||(f.fin==='f')===c.foil)&&(!f.set||c.set===f.set)&&(!f.card||c.name===f.card)&&(!f.type||(c.type||'').toLowerCase().includes(f.type))&&(!f.rar||c.rar===f.rar)&&(!f.deck||(c.decks||[]).includes(f.deck));
+const lab=f=>{const p=[];if(f.rl==='1')p.push('RL');if(f.rl==='0')p.push('ohne RL');if(f.fin==='f')p.push('Foil');if(f.fin==='n')p.push('Normal');if(f.set)p.push(f.set);if(f.card)p.push(f.card);if(f.type)p.push(TYPES.find(t=>t[0]===f.type)[1]);if(f.rar)p.push(RARS.find(t=>t[0]===f.rar)[1]);if(f.deck)p.push('Deck: '+f.deck);return p.join(' · ')||'Alles'};
 function moves(range){
   const cut=range?new Date(Date.now()-range*864e5).toISOString().slice(0,10):'';
   const inr=Object.keys(hist).sort().filter(d=>d>=cut),mv=new Map();
@@ -363,6 +473,7 @@ function renderHist(){
   const fill=(id,vals,all)=>{const el=$(id),cur=el.value;el.innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option>${esc(v)}</option>`).join('');el.value=vals.includes(cur)?cur:''};
   fill('h-set',[...new Set(col.map(c=>c.set))].sort(),'Alle Editionen');
   fill('h-card',[...new Set(col.map(c=>c.name))].sort(),'Alle Namen');
+  fill('h-deck',decks,'Alle Decks');
   const range=+$('h-range').value,rel=$('h-rel').checked;
   let days=Object.keys(hist).sort();
   if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
@@ -407,7 +518,7 @@ function renderHist(){
     return `<div><span style="color:${q.color}">●</span> ${esc(lab(q.f))}: <b>${eur(last)}</b>`+(days.length>1&&d!=null?` · <span class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)} (${(d/first*100).toFixed(1)} %)</span>`:'')+'</div>';
   }).join('')+(days.length<2?'Der Verlauf entsteht ab jetzt, ein Punkt pro Tag.':'');
 }
-['h-range','h-rl','h-fin','h-set','h-card','h-type','h-rar','h-rel'].forEach(id=>$(id).onchange=renderHist);
+['h-range','h-rl','h-fin','h-set','h-card','h-type','h-rar','h-deck','h-rel'].forEach(id=>$(id).onchange=renderHist);
 $('h-add').onclick=()=>{if(cmp.length>=5)return;cmp.push(curF());try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};
 const MODEL='claude-sonnet-5-5';
 let pend=[];
