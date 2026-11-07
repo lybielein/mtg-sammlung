@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0f6b6b"><link rel="icon" href="icon-192.png"><title>Meine Magic-Sammlung</title>
 <style>
-:root{--bg:#eef1f4;--card:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d3dae1;--acc:#0f6b6b;--up:#1b7f4b;--down:#b3362e}
-@media (prefers-color-scheme:dark){:root{--bg:#10171e;--card:#18222c;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--acc:#4fc0bd;--up:#5bd08e;--down:#ff8a80}}
+:root{--bg:#eef1f4;--card:#fff;--ink:#14202b;--mute:#5d6b78;--line:#d3dae1;--acc:#0f6b6b;--up:#1b7f4b;--down:#b3362e;--acc2:#7c3aed}
+@media (prefers-color-scheme:dark){:root{--bg:#10171e;--card:#18222c;--ink:#e6edf2;--mute:#93a2af;--line:#2a3743;--acc:#4fc0bd;--up:#5bd08e;--down:#ff8a80;--acc2:#b79cff}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif;padding:16px;max-width:900px;margin-inline:auto}
 h1{font:600 28px/1.1 Georgia,serif;margin:8px 0 14px}
@@ -47,6 +47,7 @@ details{background:var(--card);border:1px solid var(--line);border-radius:8px;ma
 summary{cursor:pointer;padding:10px 0}
 details>.list{margin-bottom:8px}
 dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;width:min(420px,92vw)}
+.dk{border-color:var(--acc2);color:var(--acc2)}
 .foot{margin:24px 0;color:var(--mute);font-size:13px}
 </style>
 </head>
@@ -153,7 +154,7 @@ let col=[];
 try{col=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){col=[]}
 const $=id=>document.getElementById(id);
 const eur=n=>n==null?'–':n.toLocaleString('de-DE',{style:'currency',currency:'EUR'});
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(col))}catch(e){}snap()};
+const save=()=>{clampDq();try{localStorage.setItem(KEY,JSON.stringify(col))}catch(e){}snap()};
 const price=c=>{const p=c.foil?c.eurFoil:c.eur;return p==null?null:p};
 const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
@@ -227,7 +228,7 @@ function render(){
     const p=price(c), d=c.buy!=null&&p!=null?(p-c.buy)*c.qty:null, mm=M(c);
     const el=document.createElement('div');el.className='it';
     el.innerHTML=`<img src="${esc(c.img)}" alt="" loading="lazy">
-    <div><div class="n">${esc(c.name)}${c.foil?' ✦':''}${c.rl?' <span class="rl">RL</span>':''}</div><div class="m">${esc(c.set)} · #${esc(c.num)}· <a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div><div class="ctl"></div></div>
+    <div><div class="n">${esc(c.name)}${c.foil?' ✦':''}${c.rl?' <span class="rl">RL</span>':''}${(c.decks||[]).map(d=>` <span class="rl dk">${esc(d)} ×${dqOf(c,d)}</span>`).join('')}</div><div class="m">${esc(c.set)} · #${esc(c.num)}· <a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div><div class="ctl"></div></div>
     <div class="r"><b>${eur(p==null?null:p*c.qty)}</b><div class="m">${c.qty} × ${eur(p)}</div>${d!=null?`<div class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)}</div>`:''}${mm?`<div class="m ${mm.abs>=0?'up':'down'}">${ml}: ${mm.abs>=0?'+':''}${eur(mm.abs)} (${mm.rel>=0?'+':''}${(mm.rel*100).toFixed(1)} %)</div>`:''}</div>`;
     const ctl=el.querySelector('.ctl');
     ctl.append(btn('−',()=>{c.qty--;if(c.qty<1)col=col.filter(x=>x!==c);save();render()}));
@@ -358,19 +359,38 @@ let decks=[],openSets=new Set();
 try{decks=JSON.parse(localStorage.getItem(DK)||'[]')}catch(e){}
 try{openSets=new Set(JSON.parse(localStorage.getItem(OK)||'[]'))}catch(e){}
 col.forEach(c=>(c.decks||[]).forEach(d=>{if(!decks.includes(d))decks.push(d)}));
+const dqOf=(c,d)=>c.dq&&c.dq[d]!=null?c.dq[d]:((c.decks||[]).includes(d)?c.qty:0);
+function setDq(c,d,n){
+  n=Math.max(0,Math.min(c.qty,n));c.dq=c.dq||{};c.decks=c.decks||[];
+  if(n>0){c.dq[d]=n;if(!c.decks.includes(d))c.decks.push(d)}else{delete c.dq[d];c.decks=c.decks.filter(x=>x!==d)}
+}
+function clampDq(){
+  col.forEach(c=>{
+    c.dq=c.dq||{};(c.decks||[]).forEach(d=>{if(c.dq[d]==null)c.dq[d]=c.qty});
+    Object.keys(c.dq).forEach(d=>{if(c.dq[d]>c.qty)c.dq[d]=c.qty;if(!(c.dq[d]>0)){delete c.dq[d];c.decks=(c.decks||[]).filter(x=>x!==d)}});
+  });
+}
+clampDq();
+const stepper=(get,set,max)=>{
+  const w=document.createElement('span');w.style.cssText='display:inline-flex;gap:6px;align-items:center';
+  const lbl=document.createElement('span');const upd=()=>{lbl.textContent=get()+'/'+max()};
+  const m=btn('−',()=>{set(get()-1);upd()}),p=btn('+',()=>{set(get()+1);upd()});
+  m.setAttribute('aria-label','Weniger');p.setAttribute('aria-label','Mehr');
+  upd();w.append(m,lbl,p);return w;
+};
 const saveDecks=()=>{try{localStorage.setItem(DK,JSON.stringify(decks))}catch(e){}};
 function addDeck(n){if(n&&!decks.includes(n)){decks.push(n);saveDecks()}}
 function moveDeck(d,dir){const i=decks.indexOf(d),j=i+dir;if(i<0||j<0||j>=decks.length)return;[decks[i],decks[j]]=[decks[j],decks[i]];saveDecks();render()}
 function renameDeck(o,n){
   decks=decks.map(d=>d===o?n:d);
-  col.forEach(c=>{if(c.decks)c.decks=c.decks.map(d=>d===o?n:d)});
+  col.forEach(c=>{if(c.decks)c.decks=c.decks.map(d=>d===o?n:d);if(c.dq&&c.dq[o]!=null){c.dq[n]=c.dq[o];delete c.dq[o]}});
   cmp.forEach(f=>{if(f.deck===o)f.deck=n});
   try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}
   saveDecks();save();render();
 }
 function deleteDeck(d){
   decks=decks.filter(x=>x!==d);
-  col.forEach(c=>{if(c.decks)c.decks=c.decks.filter(x=>x!==d)});
+  col.forEach(c=>{if(c.decks)c.decks=c.decks.filter(x=>x!==d);if(c.dq)delete c.dq[d]});
   cmp.forEach(f=>{if(f.deck===d)f.deck=''});
   try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}
   saveDecks();save();render();
@@ -379,9 +399,9 @@ function renderDecks(){
   const el=$('decks');el.innerHTML='';
   if(!decks.length)el.innerHTML='<div class="msg">Noch keine Decks. Lege eins an und ordne Karten über „Decks“ in der Sammlung zu.</div>';
   decks.forEach(d=>{
-    const cs=col.filter(c=>(c.decks||[]).includes(d));
+    const cs=col.filter(c=>dqOf(c,d)>0);
     const row=document.createElement('div');row.className='it';row.style.gridTemplateColumns='1fr auto';
-    row.innerHTML=`<div><div class="n">${esc(d)}</div><div class="m">${cs.reduce((a,c)=>a+c.qty,0)} Karten · ${eur(cs.reduce((a,c)=>a+(price(c)||0)*c.qty,0))}</div></div><div class="ctl"></div>`;
+    row.innerHTML=`<div><div class="n">${esc(d)}</div><div class="m">${cs.reduce((a,c)=>a+dqOf(c,d),0)} Karten · ${eur(cs.reduce((a,c)=>a+(price(c)||0)*dqOf(c,d),0))}</div></div><div class="ctl"></div>`;
     const ctl=row.querySelector('.ctl');
     const up=btn('↑',()=>moveDeck(d,-1)),dn=btn('↓',()=>moveDeck(d,1));
     up.setAttribute('aria-label','Nach oben');dn.setAttribute('aria-label','Nach unten');
@@ -396,38 +416,33 @@ function renderDecks(){
 }
 function openDeckCards(d){
   const b=$('dlg-body');let q='';
-  const draw=()=>{
-    b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">Karten für „${esc(d)}“</h3>`;
-    const inp=document.createElement('input');inp.type='search';inp.placeholder='Karten filtern';inp.value=q;inp.style.width='100%';
-    const box=document.createElement('div');box.style.cssText='max-height:50vh;overflow:auto;margin-top:6px';
-    const list=()=>{
-      box.innerHTML='';
-      col.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).sort((x,y)=>x.name.localeCompare(y.name)).forEach(c=>{
-        const l=document.createElement('label');l.style.cssText='display:flex;gap:8px;padding:5px 0;align-items:center';
-        const cb=document.createElement('input');cb.type='checkbox';cb.checked=(c.decks||[]).includes(d);
-        cb.onchange=()=>{c.decks=c.decks||[];if(cb.checked){if(!c.decks.includes(d))c.decks.push(d)}else c.decks=c.decks.filter(z=>z!==d);save();render()};
-        l.append(cb,document.createTextNode(`${c.name}${c.foil?' ✦':''} · ${c.set}`));box.append(l);
-      });
-    };
-    inp.oninput=()=>{q=inp.value;list()};
-    b.append(inp,box);list();
+  b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">Karten für „${esc(d)}“</h3>`;
+  const inp=document.createElement('input');inp.type='search';inp.placeholder='Karten filtern';inp.style.width='100%';
+  const box=document.createElement('div');box.style.cssText='max-height:50vh;overflow:auto;margin-top:6px';
+  const list=()=>{
+    box.innerHTML='';
+    col.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())).sort((x,y)=>x.name.localeCompare(y.name)).forEach(c=>{
+      const row=document.createElement('div');row.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0';
+      const nm=document.createElement('span');nm.textContent=`${c.name}${c.foil?' ✦':''} · ${c.set}`;nm.style.fontSize='14px';
+      row.append(nm,stepper(()=>dqOf(c,d),n=>{setDq(c,d,n);save();render()},()=>c.qty));box.append(row);
+    });
   };
-  draw();$('dlg').showModal();
+  inp.oninput=()=>{q=inp.value;list()};
+  b.append(inp,box);list();$('dlg').showModal();
 }
 function openDeckDlg(c){
   const b=$('dlg-body');
   const draw=()=>{
-    b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">${esc(c.name)} – Decks</h3>`;
+    b.innerHTML=`<h3 style="margin:0 0 8px;font:600 17px Georgia,serif">${esc(c.name)} – Decks <span class="m">(${c.qty}× vorhanden)</span></h3>`;
     if(!decks.length)b.insertAdjacentHTML('beforeend','<div class="msg">Noch keine Decks. Lege unten eins an.</div>');
     decks.forEach(d=>{
-      const l=document.createElement('label');l.style.cssText='display:flex;gap:8px;padding:6px 0;align-items:center';
-      const cb=document.createElement('input');cb.type='checkbox';cb.checked=(c.decks||[]).includes(d);
-      cb.onchange=()=>{c.decks=c.decks||[];if(cb.checked){if(!c.decks.includes(d))c.decks.push(d)}else c.decks=c.decks.filter(x=>x!==d);save();render()};
-      l.append(cb,document.createTextNode(d));b.append(l);
+      const row=document.createElement('div');row.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0';
+      const nm=document.createElement('span');nm.textContent=d;
+      row.append(nm,stepper(()=>dqOf(c,d),n=>{setDq(c,d,n);save();render()},()=>c.qty));b.append(row);
     });
     const row=document.createElement('div');row.className='row';
     const inp=document.createElement('input');inp.placeholder='Neues Deck';inp.setAttribute('aria-label','Neues Deck');
-    row.append(inp,btn('Anlegen & zuordnen',()=>{const n=inp.value.trim();if(!n)return;addDeck(n);c.decks=c.decks||[];if(!c.decks.includes(n))c.decks.push(n);save();render();draw()}));
+    row.append(inp,btn('Anlegen & zuordnen',()=>{const n=inp.value.trim();if(!n)return;addDeck(n);setDq(c,n,1);save();render();draw()}));
     b.append(row);
   };
   draw();$('dlg').showModal();
@@ -478,9 +493,9 @@ function renderHist(){
   let days=Object.keys(hist).sort();
   if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
   const series=[{f:curF(),live:true},...cmp.map((f,i)=>({f,i}))].map((q,n)=>{
-    const keys=new Set(col.filter(c=>fmatch(c,q.f)).map(ck));
+    const qm=new Map(col.filter(c=>fmatch(c,q.f)).map(c=>[ck(c),q.f.deck?dqOf(c,q.f.deck):null]));
     q.color=COLORS[n%COLORS.length];
-    q.abs=days.map(d=>Object.entries(hist[d]).reduce((a,[k,e])=>a+(keys.has(k)&&Array.isArray(e)?e[0]*e[1]:0),0));
+    q.abs=days.map(d=>Object.entries(hist[d]).reduce((a,[k,e])=>a+(qm.has(k)&&Array.isArray(e)?e[0]*(qm.get(k)==null?e[1]:qm.get(k)):0),0));
     const first=q.abs.find(v=>v>0);
     q.v=rel?q.abs.map(v=>first?(v/first-1)*100:null):q.abs;
     return q;
