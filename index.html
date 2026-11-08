@@ -48,6 +48,8 @@ summary{cursor:pointer;padding:10px 0}
 details>.list{margin-bottom:8px}
 dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:10px;width:min(420px,92vw)}
 .dk{border-color:var(--acc2);color:var(--acc2)}
+#zoom{padding:0;border:0;background:transparent;max-width:98vw}
+#zoom img{max-width:96vw;max-height:92vh;border-radius:12px;display:block}
 .foot{margin:24px 0;color:var(--mute);font-size:13px}
 </style>
 </head>
@@ -81,6 +83,7 @@ dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);bord
 <div id="h-info" class="msg"></div>
 
 <h2>Karte hinzufügen</h2>
+<div class="row" style="margin-bottom:6px;align-items:center"><label for="tdeck" class="m">Neue Karten zuordnen zu:</label><select id="tdeck"></select></div>
 <div class="row">
   <div class="sw"><input type="search" id="q" placeholder="Kartenname, z. B. Recurring Nightmare" aria-label="Kartenname" autocomplete="off"><div id="sg" class="sg" hidden></div></div>
   <button class="p" id="go">Suchen</button>
@@ -147,6 +150,8 @@ dialog{background:var(--card);color:var(--ink);border:1px solid var(--line);bord
 </div>
 <p class="foot">Preise: Cardmarket-Durchschnittspreise in EUR, geliefert über die Scryfall-API (täglich aktualisiert). Die Sammlung wird nur in diesem Browser gespeichert – sichere sie regelmäßig als JSON.</p>
 
+<dialog id="det" style="width:min(560px,96vw);max-height:92vh;overflow:auto"><div id="det-body"></div><div class="row" style="margin-top:10px"><button class="p" id="det-x">Schließen</button></div></dialog>
+<dialog id="zoom"><img id="zoom-img" alt=""></dialog>
 <dialog id="dlg"><div id="dlg-body"></div><div class="row" style="margin-top:10px"><button class="p" id="dlg-x">Fertig</button></div></dialog>
 <script>
 const KEY='mtg-sammlung-v1';
@@ -207,7 +212,10 @@ document.addEventListener('click',e=>{if(!e.target.closest('.sw'))hideSg()});
 function btn(t,f){const b=document.createElement('button');b.textContent=t;b.onclick=f;return b}
 function add(d,foil){
   const ex=col.find(c=>c.id===d.id&&c.foil===foil);
-  if(ex)ex.qty++; else col.push(fromScry(d,foil));
+  let cc=ex;
+  if(ex)ex.qty++; else{cc=fromScry(d,foil);cc.added=today();col.push(cc)}
+  const tdk=$('tdeck').value;
+  if(tdk)setDq(cc,tdk,dqOf(cc,tdk)+1);
   save();render();
 }
 
@@ -239,6 +247,8 @@ function render(){
     inp.onchange=()=>{c.buy=inp.value===''?null:parseFloat(inp.value);save();render()};
     ctl.append(inp);
     ctl.append(btn('Decks'+((c.decks||[]).length?' ('+c.decks.length+')':''),()=>openDeckDlg(c)));
+    const im=el.querySelector('img'),nm=el.querySelector('.n');
+    [im,nm].forEach(x=>{x.style.cursor='pointer';x.onclick=()=>openCardDetail(c)});
     return el;
   };
   if($('grp').value==='set'){
@@ -402,10 +412,11 @@ function renderDecks(){
     const cs=col.filter(c=>dqOf(c,d)>0);
     const row=document.createElement('div');row.className='it';row.style.gridTemplateColumns='1fr auto';
     row.innerHTML=`<div><div class="n">${esc(d)}</div><div class="m">${cs.reduce((a,c)=>a+dqOf(c,d),0)} Karten · ${eur(cs.reduce((a,c)=>a+(price(c)||0)*dqOf(c,d),0))}</div></div><div class="ctl"></div>`;
+    const dn0=row.querySelector('.n');dn0.style.cursor='pointer';dn0.style.textDecoration='underline';dn0.onclick=()=>openDeckDetail(d);
     const ctl=row.querySelector('.ctl');
     const up=btn('↑',()=>moveDeck(d,-1)),dn=btn('↓',()=>moveDeck(d,1));
     up.setAttribute('aria-label','Nach oben');dn.setAttribute('aria-label','Nach unten');
-    ctl.append(up,dn,btn('Karten',()=>openDeckCards(d)));
+    ctl.append(btn('Ansehen',()=>openDeckDetail(d)),up,dn,btn('Karten',()=>openDeckCards(d)));
     ctl.append(btn('Umbenennen',()=>{const n=(prompt('Neuer Name',d)||'').trim();if(n&&n!==d&&!decks.includes(n))renameDeck(d,n)}));
     ctl.append(btn('Löschen',()=>{if(confirm('Deck „'+d+'“ löschen? Die Karten bleiben in der Sammlung.'))deleteDeck(d)}));
     el.append(row);
@@ -413,6 +424,9 @@ function renderDecks(){
   const fd=$('fdeck'),cur=fd.value;
   fd.innerHTML='<option value="">Alle Decks</option>'+decks.map(d=>`<option>${esc(d)}</option>`).join('');
   fd.value=decks.includes(cur)?cur:'';
+  const td=$('tdeck'),ct=td.value;
+  td.innerHTML='<option value="">Kein Deck</option>'+decks.map(d=>`<option>${esc(d)}</option>`).join('');
+  td.value=decks.includes(ct)?ct:'';
 }
 function openDeckCards(d){
   const b=$('dlg-body');let q='';
@@ -449,6 +463,63 @@ function openDeckDlg(c){
 }
 $('dlg-x').onclick=()=>$('dlg').close();
 $('adddeck').onclick=()=>{const n=$('newdeck').value.trim();if(n){addDeck(n);$('newdeck').value='';render()}};
+const zoomImg=u=>{$('zoom-img').src=u.replace('/small/','/large/');$('zoom').showModal()};
+$('zoom').onclick=()=>$('zoom').close();
+$('det-x').onclick=()=>$('det').close();
+const fmtD=d=>new Date(d+'T00:00:00').toLocaleDateString('de-DE');
+function openCardDetail(c){
+  const b=$('det-body'),k=ck(c);
+  const fs=Object.keys(hist).sort().find(x=>Array.isArray(hist[x][k]));
+  const added=c.added?fmtD(c.added):(fs?fmtD(fs)+' (erste Erfassung)':'unbekannt');
+  b.innerHTML=`<h3 style="margin:0 0 8px;font:600 20px Georgia,serif">${esc(c.name)}${c.foil?' ✦':''}${c.rl?' <span class="rl">RL</span>':''}${(c.decks||[]).map(d=>` <span class="rl dk">${esc(d)} ×${dqOf(c,d)}</span>`).join('')}</h3>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <img id="det-img" src="${esc(c.img.replace('/small/','/normal/'))}" alt="${esc(c.name)}" style="width:min(250px,100%);border-radius:10px;cursor:zoom-in">
+    <div style="flex:1;min-width:170px;font-size:14px;line-height:1.7">
+      <div>${esc(c.set)} · #${esc(c.num)}</div>
+      <div>Anzahl: <b>${c.qty}</b></div>
+      <div>Preis: <b>${eur(price(c))}</b> pro Karte</div>
+      <div>Einkaufspreis: ${c.buy!=null?eur(c.buy):'–'}</div>
+      <div>Hinzugefügt am: <b>${added}</b></div>
+      <div><a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:10px;align-items:center">
+    <select id="det-range" aria-label="Zeitraum"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="365">1 Jahr</option><option value="0">Alles</option></select>
+    <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="det-rel"> Relativ (%)</label>
+  </div>
+  <svg id="det-svg" viewBox="0 0 600 220" width="100%" role="img" aria-label="Wertverlauf der Karte"></svg>
+  <div id="det-info" class="msg"></div>`;
+  $('det-img').onclick=()=>zoomImg(c.img);
+  const upd=()=>{
+    const range=+$('det-range').value,rel=$('det-rel').checked;
+    let days=Object.keys(hist).sort();
+    if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
+    const raw=days.map(d=>{const e=hist[d][k];return Array.isArray(e)?e[0]:null});
+    const first=raw.find(x=>x!=null);
+    if(first==null){$('det-svg').innerHTML='';$('det-info').textContent='Für diese Karte gibt es in diesem Zeitraum noch keine Verlaufsdaten.';return}
+    const v=rel?raw.map(x=>x!=null?(x/first-1)*100:null):raw;
+    drawSvg($('det-svg'),days,[{v,color:COLORS[0]}],rel);
+    const last=[...raw].reverse().find(x=>x!=null),d=last-first;
+    $('det-info').innerHTML=`Einzelpreis aktuell <b>${eur(last)}</b>`+(days.length>1?` · seit ${days[0]}: <span class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)} (${(d/first*100).toFixed(1)} %)</span>`:' · Der Verlauf entsteht ab jetzt.');
+  };
+  $('det-range').onchange=upd;$('det-rel').onchange=upd;upd();
+  $('det').showModal();
+}
+function openDeckDetail(d){
+  const b=$('det-body');
+  const cs=col.filter(c=>dqOf(c,d)>0).sort((x,y)=>x.set.localeCompare(y.set)||x.name.localeCompare(y.name));
+  const n=cs.reduce((a,c)=>a+dqOf(c,d),0),v=cs.reduce((a,c)=>a+(price(c)||0)*dqOf(c,d),0);
+  b.innerHTML=`<h3 style="margin:0 0 4px;font:600 20px Georgia,serif">${esc(d)}</h3><div class="msg" style="padding-top:0">${n} Karten · ${eur(v)}</div>`;
+  const g=document.createElement('div');g.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:8px';
+  cs.forEach(c=>{
+    const t=document.createElement('div');t.style.cssText='font-size:12px;line-height:1.35';
+    t.innerHTML=`<img src="${esc(c.img)}" alt="${esc(c.name)}" style="width:100%;border-radius:6px;cursor:zoom-in;display:block;margin-bottom:3px"><b>${esc(c.name)}${c.foil?' ✦':''}</b><br>${esc(c.set)} #${esc(c.num)}<br>× ${dqOf(c,d)}`;
+    t.querySelector('img').onclick=()=>zoomImg(c.img);
+    g.append(t);
+  });
+  if(!cs.length)g.innerHTML='<div class="msg">Noch keine Karten in diesem Deck.</div>';
+  b.append(g);$('det').showModal();
+}
 const HK='mtg-hist-v2',CK='mtg-cmp-v1';
 let hist={},cmp=[];
 try{hist=JSON.parse(localStorage.getItem(HK)||'{}')}catch(e){}
@@ -484,34 +555,10 @@ function moves(range){
   });
   return mv;
 }
-function renderHist(){
-  const fill=(id,vals,all)=>{const el=$(id),cur=el.value;el.innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option>${esc(v)}</option>`).join('');el.value=vals.includes(cur)?cur:''};
-  fill('h-set',[...new Set(col.map(c=>c.set))].sort(),'Alle Editionen');
-  fill('h-card',[...new Set(col.map(c=>c.name))].sort(),'Alle Namen');
-  fill('h-deck',decks,'Alle Decks');
-  const range=+$('h-range').value,rel=$('h-rel').checked;
-  let days=Object.keys(hist).sort();
-  if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
-  const series=[{f:curF(),live:true},...cmp.map((f,i)=>({f,i}))].map((q,n)=>{
-    const qm=new Map(col.filter(c=>fmatch(c,q.f)).map(c=>[ck(c),q.f.deck?dqOf(c,q.f.deck):null]));
-    q.color=COLORS[n%COLORS.length];
-    q.abs=days.map(d=>Object.entries(hist[d]).reduce((a,[k,e])=>a+(qm.has(k)&&Array.isArray(e)?e[0]*(qm.get(k)==null?e[1]:qm.get(k)):0),0));
-    const first=q.abs.find(v=>v>0);
-    q.v=rel?q.abs.map(v=>first?(v/first-1)*100:null):q.abs;
-    return q;
-  });
-  const leg=$('h-leg');leg.innerHTML='';
-  series.forEach(q=>{
-    const sp=document.createElement('span');sp.className='rl';sp.style.cssText=`border-color:${q.color};color:${q.color};margin:0`;
-    sp.textContent='● '+lab(q.f)+(q.live?' (aktuell)':'')+' ';
-    if(!q.live){const x=document.createElement('button');x.textContent='✕';x.style.cssText='padding:0 5px;border:0;background:none;color:inherit';x.setAttribute('aria-label','Linie entfernen');
-      x.onclick=()=>{cmp.splice(q.i,1);try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};sp.append(x)}
-    leg.append(sp);
-  });
-  const svg=$('h-svg'),info=$('h-info');
-  if(!days.length){svg.innerHTML='';info.textContent='Noch keine Verlaufsdaten. Pro Tag wird ein Wert gespeichert.';return}
+function drawSvg(svg,days,series,rel){
   const W=600,H=220,L=56,R=12,T=12,B=26;
   const all=series.flatMap(q=>q.v).filter(v=>v!=null);
+  if(!all.length){svg.innerHTML='';return}
   let lo=Math.min(...all),hi=Math.max(...all);
   if(hi===lo){hi+=1;lo-=1}
   const pad=(hi-lo)*.1;hi+=pad;lo=rel?lo-pad:Math.max(0,lo-pad);
@@ -528,10 +575,56 @@ function renderHist(){
     if(days.length<=40)q.v.forEach((v,i)=>{if(v!=null)out+=`<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${q.color}"/>`});
   });
   svg.innerHTML=out;
+}
+function perfSeries(days,qm){
+  const qOf=(k,e)=>qm.get(k)==null?e[1]:qm.get(k);
+  let idx=100,gain=0;const abs=[],pct=[],gn=[];
+  days.forEach((d,i)=>{
+    const cur=hist[d];let v=0;
+    for(const [k,e] of Object.entries(cur))if(qm.has(k)&&Array.isArray(e))v+=e[0]*qOf(k,e);
+    if(i>0){
+      const prev=hist[days[i-1]];let a=0,b=0;
+      for(const [k,pe] of Object.entries(prev)){
+        const ce=cur[k];if(!qm.has(k)||!Array.isArray(pe)||!Array.isArray(ce))continue;
+        const q=qOf(k,pe);a+=pe[0]*q;b+=ce[0]*q;
+      }
+      if(a>0){idx*=b/a;gain+=b-a}
+    }
+    abs.push(v);pct.push(v>0?idx-100:null);gn.push(gain);
+  });
+  return {abs,pct,gain:gn};
+}
+function renderHist(){
+  const fill=(id,vals,all)=>{const el=$(id),cur=el.value;el.innerHTML=`<option value="">${all}</option>`+vals.map(v=>`<option>${esc(v)}</option>`).join('');el.value=vals.includes(cur)?cur:''};
+  fill('h-set',[...new Set(col.map(c=>c.set))].sort(),'Alle Editionen');
+  fill('h-card',[...new Set(col.map(c=>c.name))].sort(),'Alle Namen');
+  fill('h-deck',decks,'Alle Decks');
+  const range=+$('h-range').value,rel=$('h-rel').checked;
+  let days=Object.keys(hist).sort();
+  if(range){const cut=new Date(Date.now()-range*864e5).toISOString().slice(0,10);days=days.filter(d=>d>=cut)}
+  const series=[{f:curF(),live:true},...cmp.map((f,i)=>({f,i}))].map((q,n)=>{
+    const qm=new Map(col.filter(c=>fmatch(c,q.f)).map(c=>[ck(c),q.f.deck?dqOf(c,q.f.deck):null]));
+    q.color=COLORS[n%COLORS.length];
+    const p=perfSeries(days,qm);
+    q.abs=p.abs;q.gain=p.gain;q.pct=p.pct;
+    q.v=rel?p.pct:p.abs;
+    return q;
+  });
+  const leg=$('h-leg');leg.innerHTML='';
+  series.forEach(q=>{
+    const sp=document.createElement('span');sp.className='rl';sp.style.cssText=`border-color:${q.color};color:${q.color};margin:0`;
+    sp.textContent='● '+lab(q.f)+(q.live?' (aktuell)':'')+' ';
+    if(!q.live){const x=document.createElement('button');x.textContent='✕';x.style.cssText='padding:0 5px;border:0;background:none;color:inherit';x.setAttribute('aria-label','Linie entfernen');
+      x.onclick=()=>{cmp.splice(q.i,1);try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};sp.append(x)}
+    leg.append(sp);
+  });
+  const svg=$('h-svg'),info=$('h-info');
+  if(!days.length){svg.innerHTML='';info.textContent='Noch keine Verlaufsdaten. Pro Tag wird ein Wert gespeichert.';return}
+  drawSvg(svg,days,series,rel);
   info.innerHTML=series.map(q=>{
-    const last=q.abs[q.abs.length-1],first=q.abs.find(v=>v>0),d=first!=null?last-first:null;
-    return `<div><span style="color:${q.color}">●</span> ${esc(lab(q.f))}: <b>${eur(last)}</b>`+(days.length>1&&d!=null?` · <span class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)} (${(d/first*100).toFixed(1)} %)</span>`:'')+'</div>';
-  }).join('')+(days.length<2?'Der Verlauf entsteht ab jetzt, ein Punkt pro Tag.':'');
+    const last=q.abs[q.abs.length-1],g=q.gain[q.gain.length-1],pc=q.pct.filter(v=>v!=null).pop();
+    return `<div><span style="color:${q.color}">●</span> ${esc(lab(q.f))}: <b>${eur(last)}</b>`+(days.length>1&&pc!=null?` · Preisentwicklung <span class="${g>=0?'up':'down'}">${g>=0?'+':''}${eur(g)} (${pc>=0?'+':''}${pc.toFixed(1)} %)</span>`:'')+'</div>';
+  }).join('')+(days.length<2?'Der Verlauf entsteht ab jetzt, ein Punkt pro Tag.':'<div class="m">Preisentwicklung = reine Kursänderung der gehaltenen Karten. Zukäufe und Verkäufe sind herausgerechnet.</div>');
 }
 ['h-range','h-rl','h-fin','h-set','h-card','h-type','h-rar','h-deck','h-rel'].forEach(id=>$(id).onchange=renderHist);
 $('h-add').onclick=()=>{if(cmp.length>=5)return;cmp.push(curF());try{localStorage.setItem(CK,JSON.stringify(cmp))}catch(e){}renderHist()};
