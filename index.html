@@ -478,7 +478,7 @@ function openCardDetail(c,fromDeck){
       <div>${esc(c.set)} · #${esc(c.num)}</div>
       <div>Anzahl: <b>${c.qty}</b></div>
       <div>Preis: <b>${eur(price(c))}</b> pro Karte</div>
-      <div>Einkaufspreis: ${c.buy!=null?eur(c.buy):'–'}</div>
+      <div>Einkaufspreis: <input id="det-buy" type="number" step="0.01" min="0" inputmode="decimal" style="width:90px;padding:4px 6px" value="${c.buy!=null?c.buy:''}" aria-label="Einkaufspreis pro Karte"> € pro Karte</div>
       <div>Hinzugefügt am: <b>${added}</b></div>
       <div><a href="https://www.cardmarket.com/de/Magic/Products/Search?searchString=${encodeURIComponent(c.name)}" target="_blank" rel="noopener">Cardmarket</a></div>
     </div>
@@ -490,6 +490,7 @@ function openCardDetail(c,fromDeck){
   <svg id="det-svg" viewBox="0 0 600 220" width="100%" role="img" aria-label="Wertverlauf der Karte"></svg>
   <div id="det-info" class="msg"></div>`;
   $('det-img').onclick=()=>zoomImg(c.img);
+  $('det-buy').onchange=()=>{const v=parseFloat(String($('det-buy').value).replace(',','.'));c.buy=isNaN(v)?null:v;save();render()};
   if(fromDeck)b.prepend(btn('← Zurück zu „'+fromDeck+'“',()=>openDeckDetail(fromDeck)));
   const upd=()=>{
     const range=+$('det-range').value,rel=$('det-rel').checked;
