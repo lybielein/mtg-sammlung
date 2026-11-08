@@ -467,7 +467,7 @@ const zoomImg=u=>{$('zoom-img').src=u.replace('/small/','/large/');$('zoom').sho
 $('zoom').onclick=()=>$('zoom').close();
 $('det-x').onclick=()=>$('det').close();
 const fmtD=d=>new Date(d+'T00:00:00').toLocaleDateString('de-DE');
-function openCardDetail(c){
+function openCardDetail(c,fromDeck){
   const b=$('det-body'),k=ck(c);
   const fs=Object.keys(hist).sort().find(x=>Array.isArray(hist[x][k]));
   const added=c.added?fmtD(c.added):(fs?fmtD(fs)+' (erste Erfassung)':'unbekannt');
@@ -490,6 +490,7 @@ function openCardDetail(c){
   <svg id="det-svg" viewBox="0 0 600 220" width="100%" role="img" aria-label="Wertverlauf der Karte"></svg>
   <div id="det-info" class="msg"></div>`;
   $('det-img').onclick=()=>zoomImg(c.img);
+  if(fromDeck)b.prepend(btn('← Zurück zu „'+fromDeck+'“',()=>openDeckDetail(fromDeck)));
   const upd=()=>{
     const range=+$('det-range').value,rel=$('det-rel').checked;
     let days=Object.keys(hist).sort();
@@ -503,7 +504,7 @@ function openCardDetail(c){
     $('det-info').innerHTML=`Einzelpreis aktuell <b>${eur(last)}</b>`+(days.length>1?` · seit ${days[0]}: <span class="${d>=0?'up':'down'}">${d>=0?'+':''}${eur(d)} (${(d/first*100).toFixed(1)} %)</span>`:' · Der Verlauf entsteht ab jetzt.');
   };
   $('det-range').onchange=upd;$('det-rel').onchange=upd;upd();
-  $('det').showModal();
+  if(!$('det').open)$('det').showModal();
 }
 function openDeckDetail(d){
   const b=$('det-body');
@@ -513,12 +514,12 @@ function openDeckDetail(d){
   const g=document.createElement('div');g.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:8px';
   cs.forEach(c=>{
     const t=document.createElement('div');t.style.cssText='font-size:12px;line-height:1.35';
-    t.innerHTML=`<img src="${esc(c.img)}" alt="${esc(c.name)}" style="width:100%;border-radius:6px;cursor:zoom-in;display:block;margin-bottom:3px"><b>${esc(c.name)}${c.foil?' ✦':''}</b><br>${esc(c.set)} #${esc(c.num)}<br>× ${dqOf(c,d)}`;
-    t.querySelector('img').onclick=()=>zoomImg(c.img);
+    t.innerHTML=`<img src="${esc(c.img)}" alt="${esc(c.name)}" style="width:100%;border-radius:6px;cursor:pointer;display:block;margin-bottom:3px"><b>${esc(c.name)}${c.foil?' ✦':''}</b><br>${esc(c.set)} #${esc(c.num)}<br>× ${dqOf(c,d)}`;
+    t.style.cursor='pointer';t.onclick=()=>openCardDetail(c,d);
     g.append(t);
   });
   if(!cs.length)g.innerHTML='<div class="msg">Noch keine Karten in diesem Deck.</div>';
-  b.append(g);$('det').showModal();
+  b.append(g);if(!$('det').open)$('det').showModal();
 }
 const HK='mtg-hist-v2',CK='mtg-cmp-v1';
 let hist={},cmp=[];
